@@ -1,6 +1,8 @@
 /**
  * W3C Web Machine Learning CG - WebMCP (Web Model Context Protocol) Polyfill
- * Standard Spec Reference: document.modelContext (Canonical W3C 2026) / navigator.modelContext (Legacy Alias)
+ * Standard Spec Reference: document.modelContext (Canonical W3C 2026)
+ * Supports Google Chrome Canary (#enable-webmcp-testing), ChatGPT in-app browser,
+ * and Chrome extensions (e.g. Model Context Tool Inspector, WebMCP Extension ID: jigokfbbpcdckjmhbgapmikncfihboec).
  */
 
 import { WebMCPToolDefinition } from '../../types';
@@ -14,15 +16,22 @@ export interface ModelContextInterface {
   isNative: boolean;
 }
 
+export interface ModelContextTestingInterface {
+  listTools: () => WebMCPToolDefinition[];
+  executeTool: (name: string, input?: any) => Promise<any>;
+}
+
 declare global {
   interface Document {
     modelContext?: ModelContextInterface;
   }
   interface Navigator {
     modelContext?: ModelContextInterface;
+    modelContextTesting?: ModelContextTestingInterface;
   }
   interface Window {
     modelContext?: ModelContextInterface;
+    modelContextTesting?: ModelContextTestingInterface;
   }
 }
 
@@ -36,12 +45,26 @@ class WebMCPContextImpl implements ModelContextInterface {
 
   private initEventListeners() {
     if (typeof window !== 'undefined') {
+      // Cross-frame / Extension postMessage bridge
       window.addEventListener('message', async (event) => {
-        // Support cross-frame / extension JSON-RPC or postMessage MCP invocations
-        if (event.data && event.data.type === 'WEBMCP_INVOKE_TOOL') {
-          const { id, toolName, input } = event.data;
+        if (!event.data) return;
+
+        // Chrome extension or ChatGPT iframe handshake
+        if (event.data.type === 'WEBMCP_DISCOVER_TOOLS' || event.data.type === 'MCP_LIST_TOOLS') {
+          const list = this.getTools().map(t => ({
+            name: t.name,
+            description: t.description,
+            inputSchema: t.inputSchema
+          }));
+          window.postMessage({ type: 'WEBMCP_DISCOVER_RESPONSE', tools: list }, '*');
+        }
+
+        if (event.data.type === 'WEBMCP_INVOKE_TOOL' || event.data.type === 'MCP_EXECUTE_TOOL') {
+          const { id, toolName, name, input, params } = event.data;
+          const targetName = toolName || name;
+          const targetInput = input || params || {};
           try {
-            const result = await this.executeTool(toolName, input);
+            const result = await this.executeTool(targetName, targetInput);
             window.postMessage({ type: 'WEBMCP_INVOKE_RESPONSE', id, result, success: true }, '*');
           } catch (err: any) {
             window.postMessage({ type: 'WEBMCP_INVOKE_RESPONSE', id, error: err.message, success: false }, '*');
@@ -61,11 +84,15 @@ class WebMCPContextImpl implements ModelContextInterface {
 
     this.tools.set(tool.name, tool);
 
-    // Dispatch standard event
+    // Standard DOM CustomEvent for extensions and debuggers
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
         new CustomEvent('webmcp:tool-registered', {
-          detail: { toolName: tool.name, description: tool.description, inputSchema: tool.inputSchema }
+          detail: {
+            toolName: tool.name,
+            description: tool.description,
+            inputSchema: tool.inputSchema
+          }
         })
       );
     }
@@ -145,14 +172,13 @@ class WebMCPContextImpl implements ModelContextInterface {
 }
 
 /**
- * Ensures document.modelContext and navigator.modelContext exist and conform to W3C WebMCP
+ * Initializes document.modelContext, navigator.modelContext, and modelContextTesting
  */
 export function initializeWebMCP(): ModelContextInterface {
   if (typeof document === 'undefined') {
     return new WebMCPContextImpl();
   }
 
-  // Check if browser has native implementation
   let instance: ModelContextInterface;
   if (document.modelContext && typeof document.modelContext.registerTool === 'function') {
     instance = document.modelContext;
@@ -166,6 +192,19 @@ export function initializeWebMCP(): ModelContextInterface {
     document.modelContext = instance;
     navigator.modelContext = instance;
     window.modelContext = instance;
+  }
+
+  // Testing harness expected by Chrome Canary and WebMCP extension
+  const testingHarness: ModelContextTestingInterface = {
+    listTools: () => instance.getTools(),
+    executeTool: (name: string, input?: any) => instance.executeTool(name, input)
+  };
+
+  if (typeof navigator !== 'undefined') {
+    navigator.modelContextTesting = testingHarness;
+  }
+  if (typeof window !== 'undefined') {
+    window.modelContextTesting = testingHarness;
   }
 
   return instance;
