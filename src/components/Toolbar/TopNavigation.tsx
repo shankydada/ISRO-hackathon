@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Viewport } from '../../types';
 import { WORKSPACE_TEMPLATES, WorkspaceTemplate } from '../../services/data/templateWorkspaces';
+import { soundService } from '../../services/sound/soundService';
 import {
   Sparkles,
   Layers,
@@ -15,7 +16,10 @@ import {
   BookOpen,
   LayoutGrid,
   ChevronDown,
-  Check
+  Check,
+  Video,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 
 interface Props {
@@ -31,6 +35,7 @@ interface Props {
   onOpenExport: () => void;
   onOpenSpecModal: () => void;
   onTogglePresentation: () => void;
+  onOpenGuidedTour: () => void;
   onAutoLayout: () => void;
 }
 
@@ -47,9 +52,11 @@ export const TopNavigation: React.FC<Props> = ({
   onOpenExport,
   onOpenSpecModal,
   onTogglePresentation,
+  onOpenGuidedTour,
   onAutoLayout
 }) => {
   const [isTemplateMenuOpen, setIsTemplateMenuOpen] = useState(false);
+  const [isMuted, setIsMuted] = useState(soundService.getMuted());
 
   const handleZoom = (factor: number) => {
     const newZoom = Math.min(Math.max(viewport.zoom * factor, 0.2), 2.5);
@@ -58,6 +65,11 @@ export const TopNavigation: React.FC<Props> = ({
 
   const handleResetZoom = () => {
     onViewportChange({ x: 80, y: 50, zoom: 1.0 });
+  };
+
+  const handleToggleSound = () => {
+    const muted = soundService.toggleMute();
+    setIsMuted(muted);
   };
 
   return (
@@ -186,6 +198,16 @@ export const TopNavigation: React.FC<Props> = ({
 
       {/* Right Action Tools */}
       <div className="flex items-center gap-2">
+        {/* Guided Demo Tour Mode */}
+        <button
+          onClick={onOpenGuidedTour}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white rounded-lg text-xs font-bold shadow-md shadow-purple-500/20 transition-all hover:scale-105"
+          title="Play Guided 3-Minute Video Demo"
+        >
+          <Video className="w-3.5 h-3.5" />
+          <span className="hidden md:inline">3-Min Demo Tour</span>
+        </button>
+
         {/* Presentation View */}
         <button
           onClick={onTogglePresentation}
@@ -195,6 +217,15 @@ export const TopNavigation: React.FC<Props> = ({
           <Presentation className="w-4 h-4 text-emerald-400" />
         </button>
 
+        {/* Sound Toggle */}
+        <button
+          onClick={handleToggleSound}
+          className="p-2 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white transition-colors border border-slate-800"
+          title={isMuted ? 'Unmute Audio' : 'Mute Audio'}
+        >
+          {isMuted ? <VolumeX className="w-4 h-4 text-slate-500" /> : <Volume2 className="w-4 h-4 text-indigo-400" />}
+        </button>
+
         {/* WebMCP Inspector */}
         <button
           onClick={onOpenInspector}
@@ -202,7 +233,7 @@ export const TopNavigation: React.FC<Props> = ({
           title="Inspect WebMCP Tools"
         >
           <Terminal className="w-3.5 h-3.5 text-sky-400" />
-          <span>WebMCP Inspector</span>
+          <span>Inspector</span>
           <span className="bg-sky-500/20 text-sky-300 font-mono text-[10px] px-1.5 py-0.2 rounded-full">
             10 Tools
           </span>

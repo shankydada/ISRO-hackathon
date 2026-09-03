@@ -2,7 +2,10 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { CanvasNode, CanvasEdge, Viewport, NodeType, ToolInvocationLog, AgentActivityStep } from './types';
 import { WORKSPACE_TEMPLATES, WorkspaceTemplate } from './services/data/templateWorkspaces';
 import { webMCPRegistry } from './services/webmcp/webmcpRegistry';
+import { declarativeWebMCP } from './services/webmcp/declarativeWebMCP';
+import { soundService } from './services/sound/soundService';
 import { InfiniteCanvas } from './components/Canvas/InfiniteCanvas';
+import { AgentCursorOverlay } from './components/Canvas/AgentCursorOverlay';
 import { TopNavigation } from './components/Toolbar/TopNavigation';
 import { BottomToolbar } from './components/Toolbar/BottomToolbar';
 import { WebMCPInspectorModal } from './components/WebMCPInspector/WebMCPInspectorModal';
@@ -10,6 +13,7 @@ import { AgentCopilotSidebar } from './components/AgentCopilot/AgentCopilotSideb
 import { ExportModal } from './components/Modals/ExportModal';
 import { PresentationMode } from './components/Modals/PresentationMode';
 import { WebMCPSpecModal } from './components/Modals/WebMCPSpecModal';
+import { GuidedDemoTour } from './components/Modals/GuidedDemoTour';
 
 export const App: React.FC = () => {
   // Initialize with the FinTech & SaaS Intelligence Center template
@@ -35,10 +39,12 @@ export const App: React.FC = () => {
   const [isSpecModalOpen, setIsSpecModalOpen] = useState(false);
   const [isCopilotOpen, setIsCopilotOpen] = useState(true);
   const [isPresentationOpen, setIsPresentationOpen] = useState(false);
+  const [isGuidedTourOpen, setIsGuidedTourOpen] = useState(false);
 
-  // Agent State
+  // Agent State & Cursor Position
   const [isAgentRunning, setIsAgentRunning] = useState(false);
   const [currentAgentAction, setCurrentAgentAction] = useState<string | null>(null);
+  const [agentCursorPos, setAgentCursorPos] = useState<{ x: number; y: number }>({ x: 500, y: 300 });
   const [activeSteps, setActiveSteps] = useState<AgentActivityStep[]>([]);
   const [toolLogs, setToolLogs] = useState<ToolInvocationLog[]>([]);
 
@@ -57,7 +63,7 @@ export const App: React.FC = () => {
     setHistoryIndex(prev => prev + 1);
   }, [historyIndex]);
 
-  // Bind WebMCP Registry to Canvas State Accessor
+  // Bind WebMCP Registry & Declarative Engine to Canvas State Accessor
   useEffect(() => {
     webMCPRegistry.bindCanvas({
       getNodes: () => nodesRef.current,
@@ -78,14 +84,23 @@ export const App: React.FC = () => {
       },
       addToolLog: (log) => {
         setToolLogs(prev => [log, ...prev].slice(0, 100));
+        soundService.playToolSuccess();
       },
       setAgentActiveNode: (nodeId) => {
-        setNodes(prev => prev.map(n => ({
-          ...n,
-          isAgentActive: n.id === nodeId
-        })));
+        setNodes(prev => {
+          const found = prev.find(n => n.id === nodeId);
+          if (found) {
+            setAgentCursorPos({ x: found.x + found.width / 2, y: found.y - 40 });
+          }
+          return prev.map(n => ({
+            ...n,
+            isAgentActive: n.id === nodeId
+          }));
+        });
       }
     });
+
+    declarativeWebMCP.scanAndRegisterForms();
   }, [pushHistory]);
 
   // Undo / Redo Handlers
@@ -140,6 +155,7 @@ export const App: React.FC = () => {
         setIsExportOpen(false);
         setIsSpecModalOpen(false);
         setIsPresentationOpen(false);
+        setIsGuidedTourOpen(false);
       }
     };
 
@@ -217,6 +233,7 @@ export const App: React.FC = () => {
       pushHistory(next, edgesRef.current);
       return next;
     });
+    soundService.playNodeCreated();
     setSelectedNodeIds([dupNode.id]);
   };
 
@@ -250,10 +267,10 @@ export const App: React.FC = () => {
       pushHistory(nodesRef.current, next);
       return next;
     });
+    soundService.playConnectSound();
   };
 
   const handleAddNode = (type: NodeType) => {
-    // Center in current viewport
     const centerX = (-viewport.x + window.innerWidth / 2) / viewport.zoom - 200;
     const centerY = (-viewport.y + window.innerHeight / 2) / viewport.zoom - 150;
 
@@ -274,6 +291,7 @@ export const App: React.FC = () => {
       x: Math.round(centerX),
       y: Math.round(centerY)
     }, 'manual_test');
+    soundService.playNodeCreated();
   };
 
   const handleSelectTemplate = (tpl: WorkspaceTemplate) => {
@@ -284,10 +302,12 @@ export const App: React.FC = () => {
     setSelectedNodeIds([]);
     setSelectedEdgeIds([]);
     pushHistory(tpl.nodes, tpl.edges);
+    soundService.playNodeCreated();
   };
 
   const handleAutoLayout = () => {
     webMCPRegistry.executeTool('auto_layout_canvas', { layoutAlgorithm: 'hierarchical_dag' }, 'manual_test');
+    soundService.playToolSuccess();
   };
 
   const handleClearCanvas = () => {
@@ -323,6 +343,7 @@ export const App: React.FC = () => {
         onOpenExport={() => setIsExportOpen(true)}
         onOpenSpecModal={() => setIsSpecModalOpen(true)}
         onTogglePresentation={() => setIsPresentationOpen(!isPresentationOpen)}
+        onOpenGuidedTour={() => setIsGuidedTourOpen(true)}
         onAutoLayout={handleAutoLayout}
       />
 
@@ -344,6 +365,15 @@ export const App: React.FC = () => {
           onDuplicateNode={handleDuplicateNode}
           onDeleteEdge={handleDeleteEdge}
           onConnectNodes={handleConnectNodes}
+        />
+
+        {/* Floating Animated Agent Cursor Overlay */}
+        <AgentCursorOverlay
+          isActive={isAgentRunning}
+          x={agentCursorPos.x * viewport.zoom + viewport.x}
+          y={agentCursorPos.y * viewport.zoom + viewport.y}
+          actionText={currentAgentAction}
+          agentName="GPT-5 Omni (WebMCP)"
         />
 
         {/* Bottom Tool Palette */}
@@ -380,6 +410,16 @@ export const App: React.FC = () => {
           onClose={() => setIsPresentationOpen(false)}
           nodes={nodes}
           onFocusNode={handleFocusNode}
+        />
+
+        {/* Guided 3-Minute Video Demo Tour */}
+        <GuidedDemoTour
+          isOpen={isGuidedTourOpen}
+          onClose={() => setIsGuidedTourOpen(false)}
+          nodes={nodes}
+          onViewportChange={setViewport}
+          onOpenInspector={() => setIsInspectorOpen(true)}
+          onCloseInspector={() => setIsInspectorOpen(false)}
         />
       </main>
 
