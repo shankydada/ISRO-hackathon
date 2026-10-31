@@ -1,0 +1,54 @@
+{
+  "name": "mycotech",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MycoTech \u2014 an AI + IoT grow ecosystem, built for RISE@IITs 2027.",
+  "scripts": {
+    "dev": "node scripts/next-with-fonts.mjs dev --hostname 0.0.0.0",
+    "build": "node scripts/next-with-fonts.mjs build",
+    "start": "node scripts/next-with-fonts.mjs start --hostname 0.0.0.0",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "check": "npm run lint && npm run typecheck && npm test",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@radix-ui/react-dialog": "latest",
+    "@radix-ui/react-slot": "1.5.0",
+    "@radix-ui/react-switch": "1.2.6",
+    "@radix-ui/react-tabs": "latest",
+    "@radix-ui/react-tooltip": "latest",
+    "class-variance-authority": "latest",
+    "clsx": "latest",
+    "lenis": "latest",
+    "lucide-react": "latest",
+    "motion": "latest",
+    "next": "16.4.3",
+    "react": "latest",
+    "react-dom": "latest",
+    "recharts": "latest",
+    "sonner": "latest",
+    "tailwind-merge": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@playwright/test": "^1.64.1",
+    "@sparticuz/chromium": "^153.0.0",
+    "@tailwindcss/postcss": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "eslint": "^9.39.0",
+    "eslint-config-next": "16.4.3",
+    "lighthouse": "^13.6.0",
+    "sharp": "latest",
+    "tailwindcss": "latest",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20.9.0"
+  }
+}
