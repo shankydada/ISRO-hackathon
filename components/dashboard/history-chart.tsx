@@ -1,0 +1,31 @@
+"use client";
+import { useMemo, useState } from "react";
+import { Area, CartesianGrid, ComposedChart, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Activity, Check } from "lucide-react";
+import { METRICS, METRIC_META, targetsFor } from "@/lib/recipes";
+import type { HistoryPoint, Metric, Recipe } from "@/lib/types";
+import { formatClock, cn } from "@/lib/utils";
+import { Tooltip as InfoTooltip } from "@/components/ui/tooltip";
+import { Info } from "lucide-react";
+export function HistoryChart({ history, recipe, minute }: { history: HistoryPoint[]; recipe: Recipe; minute: number }) {
+ const [enabled, setEnabled] = useState<Metric[]>(["temp", "rh", "co2"]); const [bandMetric, setBandMetric] = useState<Metric>("temp");
+ const targets = targetsFor(recipe, minute);
+ const data = useMemo(() => history.filter((_, i) => i % Math.max(1, Math.floor(history.length / 180)) === 0 || i === history.length - 1).map(p => { const row: Record<string, number | string> = { minute: p.minute, time: formatClock(p.minute) }; for (const m of METRICS) { const t = targetsFor(recipe, p.minute)[m]; row[m] = p[m]; row[`${m}Range`] = Math.max(1, t.max - t.min); row[`${m}Pct`] = ((p[m] - t.min) / Math.max(1, t.max - t.min)) * 100; } return row; }), [history, recipe]);
+ const toggle = (m: Metric) => { if (enabled.includes(m)) { if (enabled.length === 1) return; const next = enabled.filter(x => x !== m); setEnabled(next); if (bandMetric === m) setBandMetric(next[0]); } else { setEnabled([...enabled, m]); setBandMetric(m); } };
+ return <section className="room-card neon-violet p-5 sm:p-6" aria-labelledby="history-heading"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="label text-[#B48CFF]">THE LAST 24 SIMULATED HOURS</p><h2 id="history-heading" className="mt-2 font-heading text-xl font-bold">Every reading tells a story.</h2></div><span className="flex items-center gap-2 rounded-full border border-white/10 px-3 py-1.5 font-mono text-[9px] text-[#C9CFF0]"><Activity className="size-3 text-lime" />{formatClock(minute)} SIM TIME</span></div>
+ <div className="mt-5 flex flex-wrap gap-2" aria-label="Chart metric toggles">{METRICS.map(m => <button key={m} type="button" aria-pressed={enabled.includes(m)} onClick={() => toggle(m)} className={cn("flex min-h-8 items-center gap-1.5 rounded-md border px-2.5 py-1.5 font-mono text-[10px] transition-colors", enabled.includes(m) ? "border-white/20 bg-white/8 text-white" : "border-white/8 text-[#C9CFF0] hover:bg-white/5")}><span className="size-1.5 rounded-full" style={{ background: METRIC_META[m].color }} />{METRIC_META[m].short}{enabled.includes(m) && <Check className="size-3" />}</button>)}</div>
+ <div className="mt-4 flex flex-wrap items-center justify-between gap-2"><p className="font-mono text-[9px] text-[#C9CFF0]">Each line uses its own scale · hover for actual units</p><label className="flex items-center gap-2 font-mono text-[9px] text-[#C9CFF0]">Target band<select value={bandMetric} onChange={e => { const m = e.target.value as Metric; setBandMetric(m); if (!enabled.includes(m)) setEnabled([...enabled, m]); }} className="rounded-md border border-white/15 bg-[#10163D] px-2 py-1.5 text-white">{METRICS.filter(m => enabled.includes(m)).map(m => <option key={m} value={m}>{METRIC_META[m].label}</option>)}</select></label></div>
+ <div className="mt-3 h-[245px] w-full" role="img" aria-label={`Simulated sensor history for ${enabled.map(m => METRIC_META[m].label).join(", ")}. Shaded band shows the ${METRIC_META[bandMetric].label} target.`}><ResponsiveContainer width="100%" height="100%" minWidth={0}>
+ <ComposedChart data={data} margin={{ top: 10, right: 5, bottom: 0, left: -25 }}>
+  <CartesianGrid stroke="#ffffff0b" vertical={false} />
+  <XAxis dataKey="minute" type="number" domain={["dataMin", "dataMax"]} tickFormatter={v => formatClock(Number(v))} tick={{ fill: "#C9CFF0", fontSize: 9, fontFamily: "var(--font-mono)" }} tickCount={6} axisLine={false} tickLine={false} minTickGap={25} />
+  <YAxis yAxisId="band" domain={[targets[bandMetric].min - (targets[bandMetric].max - targets[bandMetric].min) * .8, targets[bandMetric].max + (targets[bandMetric].max - targets[bandMetric].min) * .8]} tick={{ fill: "#C9CFF0", fontSize: 9 }} axisLine={false} tickLine={false} />
+  {METRICS.map(m => <YAxis key={m} yAxisId={m} domain={(() => { const values = history.map(p => p[m]); const t = targetsFor(recipe, minute)[m]; const low = Math.min(...values, t.min), high = Math.max(...values, t.max), pad = Math.max((high - low) * .2, .1); return [low - pad, high + pad]; })()} hide />)}
+  <ReferenceArea yAxisId="band" y1={targets[bandMetric].min} y2={targets[bandMetric].max} fill="#B8FF2E" fillOpacity={.08} stroke="#B8FF2E" strokeOpacity={.2} strokeDasharray="4 4" />
+  <Area yAxisId="band" dataKey={() => null} fill="transparent" stroke="none" isAnimationActive={false} />
+  <Tooltip content={({ active, payload, label }) => { if (!active || !payload?.length) return null; const point = payload[0].payload; return <div className="rounded-xl border border-white/20 bg-[#070B24] p-3 shadow-xl"><p className="mb-2 font-mono text-[10px] text-lime">{formatClock(Number(label))} · SIMULATED</p>{enabled.map(m => <p key={m} className="mt-1 flex justify-between gap-5 font-mono text-[10px]" style={{ color: METRIC_META[m].color }}><span>{METRIC_META[m].short}</span><span>{Number(point[m]).toLocaleString("en-IN", { maximumFractionDigits: METRIC_META[m].decimals })} {METRIC_META[m].unit}</span></p>)}</div>; }} />
+  {enabled.map(m => <Line key={m} yAxisId={m} type="monotone" dataKey={m} stroke={METRIC_META[m].color} strokeWidth={1.7} dot={false} activeDot={{ r: 4 }} isAnimationActive={false} />)}
+ </ComposedChart></ResponsiveContainer></div>
+ <div className="mt-3 flex items-center gap-2 border-t border-white/8 pt-3 font-mono text-[9px] text-[#C9CFF0]"><span className="h-2 w-4 rounded-sm border border-lime/30 bg-lime/10" />{METRIC_META[bandMetric].label} target: {targets[bandMetric].min}–{targets[bandMetric].max} {METRIC_META[bandMetric].unit}<InfoTooltip content={targets[bandMetric].source}><button type="button" aria-label="Chart target source" className="rounded p-1"><Info className="size-3" /></button></InfoTooltip></div>
+ </section>;
+}
